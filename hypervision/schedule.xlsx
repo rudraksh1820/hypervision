@@ -1,0 +1,104 @@
+# Parse the Excel sheet using Pandas
+df = pd.read_excel('video_details.xlsx')
+
+# Iterate over each row in the Excel sheet
+for index, row in df.iterrows():
+    title = row['Title']
+    description = row['Description']
+    file_path = row['File path']
+    platform = row['Platform']
+    date_time = row['Date and time of upload']
+    tags = row['Tags']
+    thumbnail = row['Thumbnail']
+    privacy = row['Privacy']
+    comments = row['Comments']
+
+    # Upload the video/post to the respective platform
+    if platform == 'YouTube':
+        # Authenticate and create the YouTube API client
+        credentials = Credentials.from_authorized_user_file('youtube_credentials.json', ['https://www.googleapis.com/auth/youtube.upload'])
+        youtube = build('youtube', 'v3', credentials=credentials)
+
+        # Prepare the video metadata
+        request_body = {
+            'snippet': {
+                'title': title,
+                'description': description,
+                'tags': tags.split(','),
+                'categoryId': '22'  # '22' is the category ID for Entertainment
+            },
+            'status': {
+                'privacyStatus': privacy
+            }
+        }
+
+        # Upload the video to YouTube
+        media_file = MediaFileUpload(file_path)
+        try:
+            response = youtube.videos().insert(
+                part='snippet,status',
+                body=request_body,
+                media_body=media_file
+            ).execute()
+
+            # Print the video ID and URL
+            print(f'Video uploaded to YouTube with ID: {response["id"]}')
+            print(f'Video URL: https://www.youtube.com/watch?v={response["id"]}')
+
+        except HttpError as error:
+            print(f'An error occurred while uploading the video to YouTube: {error}')
+
+    elif platform == 'LinkedIn':
+        # Authenticate and create the LinkedIn API client
+        credentials = Credentials.from_authorized_user_file('linkedin_credentials.json', ['r_liteprofile', 'w_member_social'])
+        headers = {'X-Restli-Protocol-Version': '2.0.0'}
+        base_url = 'https://api.linkedin.com/v2/'
+        endpoint = 'ugcPosts'
+        url = base_url + endpoint
+
+        # Prepare the post metadata
+        request_body = {
+            'author': 'urn:li:person:{}'.format(row['LinkedIn Page ID']),
+            'lifecycleState': 'PUBLISHED',
+            'specificContent': {
+                'com.linkedin.ugc.ShareContent': {
+                    'shareCommentary': {
+                        'text': description
+                    },
+                    'shareMediaCategory': 'VIDEO',
+                    'media': [
+                        {
+                            'status': 'READY',
+                            'description': {
+                                'text': description
+                            },
+                            'media': {
+                                'status': 'READY',
+                                'mediaType': 'VIDEO',
+                                'video': {
+                                    'title': title,
+                                    'description': description,
+                                    'status': 'READY',
+                                    'media': [{
+                                        'status': 'READY',
+                                        'originalUrl': file_path
+                                    }]
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            'visibility': {
+                'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC'
+            }
+        }
+
+        # Upload the post to LinkedIn
+        try:
+            response = requests.post(url, headers=headers, json=request_body, auth=(os.getenv('LINKEDIN_API_KEY'), os.getenv('LINKEDIN_API_SECRET')))
+            response.raise_for_status()
+
+            # Print the post URL
+            data = response.json()
+            print(f'Post uploaded to LinkedIn with URL: {data["url"]}')
